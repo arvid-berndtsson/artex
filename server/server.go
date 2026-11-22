@@ -876,6 +876,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/sync/scopesentry/sync", s.syncSSRun)
 	// Skill CRUD (文件系统)
 	mux.HandleFunc("GET /api/skills", s.fsListSkills)
+	mux.HandleFunc("GET /api/skills/export", s.fsExportSkills)
 	mux.HandleFunc("POST /api/skills", s.fsCreateSkill)
 	mux.HandleFunc("POST /api/skills/upload", s.fsUploadSkill)
 	mux.HandleFunc("DELETE /api/skills/{name}", s.fsDeleteSkill)

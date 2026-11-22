@@ -41,6 +41,44 @@ import type { Agent, Tool } from "@/lib/types";
 // only usable when capture is on. Keep in sync with traffic.SeedToolMetas.
 const TRAFFIC_TOOL_KEYS = new Set(["traffic_search", "traffic_get"]);
 
+// UI-only summaries keep high-level page copy in English without changing the
+// detailed descriptions injected into agent prompts.
+const SYSTEM_TOOL_SUMMARIES: Record<string, string> = {
+  add_company_scope: "Manage a company's registered asset scope.",
+  add_task_scope: "Manage the authorized scope for a task.",
+  bind_finding_traffic: "Link recorded traffic evidence to a finding.",
+  create_custom_tool: "Create a platform tool integration.",
+  create_mcp: "Register an MCP server connection.",
+  create_skill: "Create a skill in the library.",
+  delete_assets_by_host: "Remove asset records associated with a host.",
+  get_finding_retest_context: "Read the finding and scope for its retest.",
+  list_companies: "Review registered companies and their asset scope.",
+  list_llm_profiles: "View configured language model profiles.",
+  list_tasks: "Review tasks and their current status.",
+  pause_task: "Pause a running task.",
+  record_finding_retest_result: "Save the result of a finding retest.",
+  update_custom_tool: "Update a platform tool integration.",
+  update_finding_report: "Save a report for a recorded finding.",
+  update_mcp: "Update an MCP server connection.",
+  update_skill_file: "Edit a file in the skill library.",
+};
+
+function systemToolSummary(key: string): string {
+  const exact = SYSTEM_TOOL_SUMMARIES[key];
+  if (exact) return exact;
+  const action = key.split("_")[0];
+  if (["get", "list", "search", "traffic", "graph", "node", "expand"].includes(action)) {
+    return "Read or search saved task and platform data.";
+  }
+  if (["add", "insert", "record", "report", "set", "prove", "bind"].includes(action)) {
+    return "Save or update task data.";
+  }
+  if (["create", "update", "delete", "pause", "kill", "spawn", "steer"].includes(action)) {
+    return "Manage a task or platform resource.";
+  }
+  return "Built-in operation available to ARTEX agents.";
+}
+
 // paramRows flattens schema.properties into an ordered row list for editing.
 // name/type/required are read-only (welded to the Go handler); description/default
 // are editable. Non-scalar params (array/object) can't carry an editable default.
@@ -161,6 +199,11 @@ function ToolEditor({
   const [enabled, setEnabled] = React.useState(tool.enabled);
   const [rows, setRows] = React.useState<ParamRow[]>(() => toRows(tool.schema));
   const [saving, setSaving] = React.useState(false);
+  const [showStoredDescription, setShowStoredDescription] = React.useState(false);
+  const [showStoredParameterDescriptions, setShowStoredParameterDescriptions] = React.useState(false);
+  const hasCJKDescription = /[\u3400-\u9fff]/.test(tool.description);
+  const hasCJKParameterDescriptions = rows.some((row) => /[\u3400-\u9fff]/.test(row.description));
+  const showDescriptionEditor = !tool.system || !hasCJKDescription || showStoredDescription;
 
   const setRow = (i: number, patch: Partial<ParamRow>) =>
     setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
@@ -231,22 +274,44 @@ function ToolEditor({
           </div>
         </div>
 
-        {/* description */}
-        <div className="grid gap-1.5">
-          <Label className="text-muted-foreground text-xs">Tool description (sent to the model)</Label>
-          <Textarea
-            className="font-mono text-xs"
-            rows={6}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-        </div>
+        {/* Keep UI summaries separate from the detailed prompt sent to the model. */}
+        {tool.system && (
+          <div className="grid gap-1 rounded-md border bg-muted/30 p-3">
+            <Label className="text-muted-foreground text-xs">English overview</Label>
+            <p className="text-sm">{systemToolSummary(tool.key)}</p>
+            {hasCJKDescription && (
+              <p className="text-muted-foreground text-xs">
+                The detailed model description is stored in its original language.
+              </p>
+            )}
+          </div>
+        )}
+        {showDescriptionEditor ? (
+          <div className="grid gap-1.5">
+            <Label className="text-muted-foreground text-xs">Stored description (sent to the model)</Label>
+            <Textarea
+              className="font-mono text-xs"
+              rows={6}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </div>
+        ) : (
+          <Button size="sm" variant="outline" onClick={() => setShowStoredDescription(true)}>
+            Show original model description
+          </Button>
+        )}
 
         {/* params */}
         <div className="grid gap-2">
           <Label className="text-muted-foreground text-xs">
             Parameters (name / type / required are read-only; description and default are editable)
           </Label>
+          {tool.system && hasCJKParameterDescriptions && !showStoredParameterDescriptions && (
+            <Button size="sm" variant="outline" onClick={() => setShowStoredParameterDescriptions(true)}>
+              Show original parameter descriptions
+            </Button>
+          )}
           {rows.length === 0 && <span className="text-muted-foreground text-xs">(no parameters)</span>}
           {rows.map((r, i) => (
             <div
@@ -274,11 +339,17 @@ function ToolEditor({
               <div className="grid gap-2">
                 <div className="grid gap-1">
                   <Label className="text-muted-foreground text-[11px]">Description</Label>
-                  <Input
-                    className="text-xs"
-                    value={r.description}
-                    onChange={(e) => setRow(i, { description: e.target.value })}
-                  />
+                  {tool.system && /[\u3400-\u9fff]/.test(r.description) && !showStoredParameterDescriptions ? (
+                    <p className="text-muted-foreground text-xs py-2">
+                      Stored in the original language.
+                    </p>
+                  ) : (
+                    <Input
+                      className="text-xs"
+                      value={r.description}
+                      onChange={(e) => setRow(i, { description: e.target.value })}
+                    />
+                  )}
                 </div>
                 <div className="grid gap-1">
                   <Label className="text-muted-foreground text-[11px]">Default</Label>
@@ -347,7 +418,7 @@ function ToolGridCard({ tool, onClick }: { tool: Tool; onClick: () => void }) {
         </Badge>
       </div>
       <p className="text-muted-foreground line-clamp-1 h-4 text-xs">
-        {tool.description || "(no description)"}
+        {tool.system ? systemToolSummary(tool.key) : tool.description || "(no description)"}
       </p>
       <div className="mt-auto flex flex-wrap gap-1 pt-1">
         {tool.agents.length === 0 && (
@@ -387,7 +458,7 @@ export default function ToolsPage() {
     if (!q) return true;
     return (
       t.key.toLowerCase().includes(q) ||
-      t.description.toLowerCase().includes(q) ||
+      (t.system ? systemToolSummary(t.key) : t.description).toLowerCase().includes(q) ||
       t.agents.some((a) => a.toLowerCase().includes(q))
     );
   }, [query]);

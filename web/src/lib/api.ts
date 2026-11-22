@@ -147,6 +147,33 @@ export async function http<T>(path: string, init?: RequestInit): Promise<T> {
   return r.json();
 }
 
+async function downloadBlob(path: string): Promise<Blob> {
+  if (MOCK) throw new Error("Downloads are unavailable in mock mode");
+  const token = getToken();
+  const r = await fetch(`/api${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (r.status === 401) {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("artex_token");
+      document.cookie = "artex_token=; path=/; max-age=0";
+      window.location.href = "/login";
+    }
+    throw new Error("Unauthorized");
+  }
+  if (!r.ok) {
+    let message = `GET ${path}: ${r.status}`;
+    try {
+      const payload = (await r.json()) as { error?: unknown };
+      if (typeof payload.error === "string" && payload.error.trim()) message = payload.error.trim();
+    } catch {
+      // Keep the status-based fallback for empty or non-JSON responses.
+    }
+    throw new Error(message);
+  }
+  return r.blob();
+}
+
 // sseUrl builds a URL for Server-Sent Events streams.
 //
 // Production (static export / Docker): the Go backend serves the web UI *and* the
@@ -1140,6 +1167,7 @@ export const api = {
 
   // ---- skills (filesystem) ----
   skills: () => get<{ skills: SkillItem[] }>("/skills").then((r) => arr(r.skills)),
+  exportSkills: () => downloadBlob("/skills/export"),
   createSkill: (s: {
     name: string;
     description: string;

@@ -9,6 +9,7 @@ import {
   FolderPlusIcon,
   FileTextIcon,
   FilePlusIcon,
+  DownloadIcon,
   PlusIcon,
   Trash2Icon,
   UploadIcon,
@@ -325,6 +326,7 @@ export default function SkillsPage() {
   const [mcpOptions, setMcpOptions] = React.useState<MCPServer[]>([]);
   const [creatingSkill, setCreatingSkill] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
+  const [exporting, setExporting] = React.useState(false);
   const uploadRef = React.useRef<HTMLInputElement>(null);
 
   // skill detail — MCP edit state (optimistic, rolls back on error)
@@ -383,6 +385,26 @@ export default function SkillsPage() {
     const f = e.target.files?.[0];
     e.target.value = ""; // reset so picking the same file again re-fires
     if (f) uploadZip(f);
+  }
+
+  async function exportLibrary() {
+    setExporting(true);
+    try {
+      const blob = await api.exportSkills();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `artex-skills-${new Date().toISOString().slice(0, 10)}.zip`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast.success(`Export started (${skills.length} skills)`);
+    } catch (e) {
+      toast.error(`Export failed: ${(e as Error).message}`);
+    } finally {
+      setExporting(false);
+    }
   }
 
   React.useEffect(() => {
@@ -739,6 +761,17 @@ export default function SkillsPage() {
           <div className="flex flex-col gap-2 border-b p-2">
             <Button size="sm" variant="outline" className="w-full" onClick={() => setNewOpen(true)}>
               <PlusIcon className="size-3.5" />New skill
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full"
+              disabled={exporting || uploading || skills.length === 0 || dirty}
+              onClick={exportLibrary}
+              title={dirty ? "Save or discard file edits before exporting" : "Download all skill folders and files as a .zip archive"}
+            >
+              <DownloadIcon className="size-3.5" />
+              {exporting ? "Exporting…" : "Export library"}
             </Button>
             <input
               ref={uploadRef}
