@@ -92,7 +92,7 @@ function SidePanel({
         {side.snapshot ? (
           <>
             <p>{side.snapshot.model.model}</p>
-            <p>Context updated at {new Date(side.snapshot.captured_at).toLocaleString()}</p>
+            <p>Context updated at {new Date(side.snapshot.captured_at).toLocaleString("en-GB")}</p>
           </>
         ) : (
           "Questions become available after the main Agent runs once"
@@ -127,8 +127,8 @@ function SidePanel({
               <div className="flex flex-wrap items-center gap-2 text-muted-foreground text-xs">
                 <Badge variant="secondary">{status[item.status]}</Badge>
                 <span className="truncate">{item.model.model}</span>
-                <time dateTime={item.snapshot_at} title={new Date(item.snapshot_at).toLocaleString()}>
-                  Context {new Date(item.snapshot_at).toLocaleTimeString()}
+                <time dateTime={item.snapshot_at} title={new Date(item.snapshot_at).toLocaleString("en-GB")}>
+                  Context {new Date(item.snapshot_at).toLocaleTimeString("en-GB")}
                 </time>
               </div>
               {item.context?.estimated_input_tokens != null && (

@@ -43,13 +43,19 @@ func renderSystem(agentKey, def string, vars any) string {
 		}
 	}
 	if out, err := renderTmpl(tmpl, vars); err == nil {
-		return out
+		return withDefaultOutputLanguage(out)
 	}
 	// DB template broke (e.g. references an out-of-catalog var) → code default.
 	if out, err := renderTmpl(def, vars); err == nil {
-		return out
+		return withDefaultOutputLanguage(out)
 	}
-	return def
+	return withDefaultOutputLanguage(def)
+}
+
+func withDefaultOutputLanguage(prompt string) string {
+	return prompt + `
+
+Language preference: Write all user-facing text in English by default, including answers, task names, findings, summaries, and reports. If the user explicitly asks for another language, use that language. Preserve quoted source evidence verbatim and explain it in English.`
 }
 
 func renderTmpl(tmpl string, vars any) (string, error) {

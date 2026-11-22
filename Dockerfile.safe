@@ -48,10 +48,21 @@ ARG PLAYWRIGHT_MCP_VERSION
 ARG PLAYWRIGHT_CLI_VERSION
 ARG PLAYWRIGHT_VERSION
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates ripgrep curl wget vim git jq unzip tzdata binutils \
-      dnsutils iputils-ping netcat-openbsd inetutils-telnet whois nmap \
-    && rm -rf /var/lib/apt/lists/*
+# Install the core runtime tools and the larger recon utilities separately.
+# apt reserves archive space for a whole transaction before downloading, so
+# one large install can fail on builders with a tight Docker storage limit.
+RUN set -eux; \
+    apt-get clean; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+      ca-certificates ripgrep curl wget git jq unzip tzdata binutils; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+      vim dnsutils iputils-ping netcat-openbsd inetutils-telnet whois nmap; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
 # Bring Node 22 in from the pinned builder stage. COPY dereferences the npm/npx
 # symlinks, so recreate them against the copied node_modules tree.
