@@ -752,6 +752,49 @@ func (d *DB) SeedPromptIfEmpty(agentID int64, tmpl string) error {
 	return err
 }
 
+// UpgradeSystemPromptIfUnedited appends a new built-in prompt version only while
+// the active version is still system-owned. expected, when non-empty, limits the
+// upgrade to one known starter prompt (used for custom agents). UI-edited prompts
+// and all of their history remain untouched.
+func (d *DB) UpgradeSystemPromptIfUnedited(agentID int64, expected, tmpl string) (bool, error) {
+	tx, err := d.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+
+	var currentID sql.NullInt64
+	if err := tx.QueryRow(`SELECT current_prompt_id FROM agents WHERE id=$1 FOR UPDATE`, agentID).Scan(&currentID); err != nil {
+		return false, err
+	}
+	if !currentID.Valid {
+		return false, nil
+	}
+	var current, updatedBy string
+	if err := tx.QueryRow(`SELECT template_text, COALESCE(updated_by,'') FROM agent_prompts WHERE id=$1`, currentID.Int64).Scan(&current, &updatedBy); err != nil {
+		return false, err
+	}
+	if updatedBy != "system" || current == tmpl || (expected != "" && current != expected) {
+		return false, nil
+	}
+	var version int
+	if err := tx.QueryRow(`SELECT COALESCE(max(version),0)+1 FROM agent_prompts WHERE agent_id=$1`, agentID).Scan(&version); err != nil {
+		return false, err
+	}
+	var promptID int64
+	if err := tx.QueryRow(`INSERT INTO agent_prompts(agent_id,version,template_text,note,updated_by)
+VALUES ($1,$2,$3,'English default prompt','system') RETURNING id`, agentID, version, tmpl).Scan(&promptID); err != nil {
+		return false, err
+	}
+	if _, err := tx.Exec(`UPDATE agents SET current_prompt_id=$1 WHERE id=$2`, promptID, agentID); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // ResetPromptToDefault appends the code-default template as a new version and
 // points current at it — the explicit "恢复为内置默认" action.
 func (d *DB) ResetPromptToDefault(agentID int64, tmpl string) (int, error) {
@@ -815,7 +858,7 @@ type MCPServer struct {
 	Env       json.RawMessage `json:"env"`
 	URL       string          `json:"url,omitempty"`
 	Enabled   bool            `json:"enabled"`
-	Insecure  bool            `json:"insecure"` // http: skip TLS cert verification (self-signed servers, issue #108)
+	Insecure  bool            `json:"insecure"`        // http: skip TLS cert verification (self-signed servers, issue #108)
 	Tools     []string        `json:"tools,omitempty"` // cached tool names (mcp_tools_cache)
 }
 

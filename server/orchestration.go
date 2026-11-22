@@ -734,16 +734,32 @@ func (s *Server) upgradeReporterTriggerMessage() {
 // 依赖：orchestration 工具已在本函数上方 SeedTool 入库，故绑定得上。
 func (s *Server) seedReporterAgent() {
 	const flag = "reporter_agent_seed_v1"
+	const oldName = "报告撰写"
+	const oldDescription = "漏洞详细报告撰写：发现漏洞时自动触发，查取证据与执行过程后写 Markdown 报告并回写。"
+	const name = "Report writer"
+	const description = "Writes an evidence-based vulnerability report after a finding is recorded."
+	if exist, _ := s.m.pg.GetAgentByKey("reporter"); exist != nil {
+		// Migrate only the untouched system-seeded reporter. If someone changed its
+		// identity, leave that choice and prompt alone.
+		if exist.Name == oldName && exist.Description == oldDescription {
+			if err := s.m.pg.UpdateAgentMeta("reporter", name, description); err != nil {
+				log.Printf("[reporter] update default metadata failed: %v", err)
+			}
+			if _, err := s.m.pg.UpgradeSystemPromptIfUnedited(exist.ID, "", agent.ReporterDefaultPrompt); err != nil {
+				log.Printf("[reporter] upgrade default prompt failed: %v", err)
+			}
+		} else if exist.Name == name && exist.Description == description {
+			if _, err := s.m.pg.UpgradeSystemPromptIfUnedited(exist.ID, "", agent.ReporterDefaultPrompt); err != nil {
+				log.Printf("[reporter] upgrade default prompt failed: %v", err)
+			}
+		}
+		return
+	}
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
 		return
 	}
 	defer func() { _ = s.m.pg.SetSetting(flag, "true") }() // 无论成功与否只尝试一次
-
-	if exist, _ := s.m.pg.GetAgentByKey("reporter"); exist != nil {
-		return // key 已被占用(用户手建过)——不覆盖
-	}
-	a, err := s.m.pg.CreateAgent("reporter", "报告撰写",
-		"漏洞详细报告撰写：发现漏洞时自动触发，查取证据与执行过程后写 Markdown 报告并回写。")
+	a, err := s.m.pg.CreateAgent("reporter", name, description)
 	if err != nil {
 		log.Printf("[reporter] 创建 agent 失败: %v", err)
 		return

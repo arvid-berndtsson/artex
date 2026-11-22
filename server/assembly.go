@@ -189,10 +189,8 @@ func idSet(ids []int64) map[int64]bool {
 	return m
 }
 
-// seedPrompts writes each built-in agent's code-default prompt body into
-// agent_prompts on startup — first-insert only (SeedPromptIfEmpty is a no-op once
-// any version exists), so the DB becomes the authoritative editable source while
-// user edits survive restarts. Runs after seedBuiltins has created the agent rows.
+// seedPrompts inserts missing built-in prompt bodies and upgrades active
+// system-owned defaults to the current English copy. User-edited prompts survive.
 func seedPrompts(pg *db.DB) {
 	for key, tmpl := range agent.BuiltinPromptSeeds() {
 		a, err := pg.GetAgentByKey(key)
@@ -202,6 +200,27 @@ func seedPrompts(pg *db.DB) {
 		}
 		if err := pg.SeedPromptIfEmpty(a.ID, tmpl); err != nil {
 			log.Printf("[prompts] seed %s 失败: %v", key, err)
+			continue
+		}
+		if _, err := pg.UpgradeSystemPromptIfUnedited(a.ID, "", tmpl); err != nil {
+			log.Printf("[prompts] upgrade %s 失败: %v", key, err)
+		}
+	}
+
+	// Custom conversational agents start with this prompt. Upgrade only untouched
+	// starter copies; custom prompt bodies and the reporter/retester defaults have
+	// their own migrations.
+	agents, err := pg.ListAgents()
+	if err != nil {
+		log.Printf("[prompts] list agents for starter upgrade failed: %v", err)
+		return
+	}
+	for _, a := range agents {
+		if a.Builtin || a.Key == "reporter" || a.Key == db.FindingRetestAgentKey {
+			continue
+		}
+		if _, err := pg.UpgradeSystemPromptIfUnedited(a.ID, agent.LegacyDefaultAssistantPrompt, agent.DefaultAssistantPrompt); err != nil {
+			log.Printf("[prompts] upgrade starter prompt for %s failed: %v", a.Key, err)
 		}
 	}
 }

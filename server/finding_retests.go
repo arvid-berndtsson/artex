@@ -192,6 +192,26 @@ func (s *Server) findingRetestTools() []actool.CoreTool {
 // Seed the editable agent atomically, without an automatic discovery trigger.
 // Once seeded, user edits/deletion survive restarts; a pre-existing key is kept.
 func (s *Server) seedFindingRetester() error {
+	const oldName = "漏洞复测"
+	const oldDescription = "从漏洞详情手动启动，读取原证据并保存独立复测结论。"
+	const name = "Finding retest"
+	const description = "Manually started from a finding to review its original evidence and save a separate retest verdict."
+	if existing, err := s.m.pg.GetAgentByKey(db.FindingRetestAgentKey); err != nil {
+		return err
+	} else if existing != nil {
+		isDefaultIdentity := (existing.Name == oldName && existing.Description == oldDescription) ||
+			(existing.Name == name && existing.Description == description)
+		if existing.Name == oldName && existing.Description == oldDescription {
+			if err := s.m.pg.UpdateAgentMeta(db.FindingRetestAgentKey, name, description); err != nil {
+				return err
+			}
+		}
+		if isDefaultIdentity {
+			if _, err := s.m.pg.UpgradeSystemPromptIfUnedited(existing.ID, "", agent.RetesterDefaultPrompt); err != nil {
+				return err
+			}
+		}
+	}
 	for _, t := range s.findingRetestTools() {
 		schema, _ := json.Marshal(t.InputSchema())
 		bindings, _ := json.Marshal([]string{db.FindingRetestAgentKey})
@@ -219,7 +239,7 @@ func (s *Server) seedFindingRetester() error {
 	}
 	var id int64
 	err = tx.QueryRow(`INSERT INTO agents(key,name,description,role,builtin,enabled)
-	VALUES ($1,'漏洞复测','从漏洞详情手动启动，读取原证据并保存独立复测结论。','assistant',false,true)
+		VALUES ($1,'Finding retest','Manually started from a finding to review its original evidence and save a separate retest verdict.','assistant',false,true)
 	ON CONFLICT (key) DO NOTHING RETURNING id`, db.FindingRetestAgentKey).Scan(&id)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
